@@ -1,0 +1,16 @@
+# Core
+psutil>=5.9
+pynput>=1.7.6
+pyttsx3>=2.90
+pywin32>=306
+pystray>=0.19
+pillow>=10.0
+
+# Natural neural voice (Kokoro)
+kokoro-onnx>=0.6
+sounddevice>=0.4
+
+# Optional: offline voice input (the setup wizard installs these if you enable it)
+# faster-whisper>=1.0
+# sounddevice>=0.4
+# numpy>=1.24
