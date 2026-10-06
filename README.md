@@ -85,7 +85,7 @@ When a game is in the foreground, a small **HUD** appears in the top-right corne
 powershell -ExecutionPolicy Bypass -File installer\build_exe.ps1
 ```
 This builds `dist\Johnny\Johnny.exe` with PyInstaller. If [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed, it also builds `dist\JohnnySetup.exe`: a normal Windows installer that offers to install Ollama.
-
+ or ***just run Johnnysetup.exe under the dist folder in root***
 ## Development
 `Run Johnny (dev).bat` runs Johnny straight from this folder. Code layout:
 
