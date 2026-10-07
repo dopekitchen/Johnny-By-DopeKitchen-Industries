@@ -1,9 +1,9 @@
 # Johnny by DopeKitchen Industries - installer
-# Copies Johnny to %LOCALAPPDATA%\Programs\Johnny, builds a private Python environment,
-# makes sure Ollama is present, then launches the graphical setup wizard.
+# Copies Johnny to a user-chosen location (default: %LOCALAPPDATA%\Programs\Johnny),
+# builds a private Python environment, makes sure Ollama is present, then launches
+# the graphical setup wizard.
 $ErrorActionPreference = "Stop"
 $Src = Split-Path -Parent $PSScriptRoot
-$Dest = Join-Path $env:LOCALAPPDATA "Programs\Johnny"
 
 function Say($msg, $color = "Cyan") { Write-Host "  $msg" -ForegroundColor $color }
 
@@ -16,6 +16,35 @@ Write-Host "     ======================================" -ForegroundColor Cyan
 Write-Host ""
 
 if (-not [Environment]::Is64BitOperatingSystem) { Say "Johnny requires 64-bit Windows." Red; exit 1 }
+
+# ---- Install location -------------------------------------------------------
+$defaultDest = Join-Path $env:LOCALAPPDATA "Programs\Johnny"
+Write-Host "  Where would you like to install Johnny?" -ForegroundColor Cyan
+Write-Host "  Press Enter to accept the default, or type a custom path." -ForegroundColor DarkCyan
+Write-Host ""
+$userInput = Read-Host "  Install location [$defaultDest]"
+if ([string]::IsNullOrWhiteSpace($userInput)) {
+    $Dest = $defaultDest
+} else {
+    $Dest = $userInput.Trim().Trim('"')
+}
+Say "Installing to: $Dest" Green
+
+# ---- Models location --------------------------------------------------------
+$defaultModels = Join-Path $Dest "models"
+Write-Host ""
+Write-Host "  Where should Ollama models be stored?" -ForegroundColor Cyan
+Write-Host "  Models can be several gigabytes — pick a drive with plenty of space." -ForegroundColor DarkCyan
+Write-Host "  Press Enter to use the Ollama default (managed by Ollama itself)." -ForegroundColor DarkCyan
+Write-Host ""
+$modelsInput = Read-Host "  Models location [Ollama default]"
+if ([string]::IsNullOrWhiteSpace($modelsInput)) {
+    $ModelsDir = ""  # empty = let Ollama manage its own default location
+} else {
+    $ModelsDir = $modelsInput.Trim().Trim('"')
+    New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
+    Say "Models will be stored at: $ModelsDir" Green
+}
 
 # ---- Python ----------------------------------------------------------------
 function Find-Python {
@@ -53,7 +82,7 @@ if (-not $ollama) {
 } else { Say "Ollama found." Green }
 
 # ---- Copy files ------------------------------------------------------------
-Say "Installing to $Dest ..."
+Say "Copying files..."
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 Get-Process pythonw -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$Dest*" } | Stop-Process -Force
 foreach ($item in @("johnny", "assets", "requirements.txt", "README.md")) {
@@ -72,6 +101,14 @@ Say "Installing components (this takes a minute)..."
 & "$venv\Scripts\python.exe" -m pip install --upgrade pip --disable-pip-version-check -q
 & "$venv\Scripts\python.exe" -m pip install -r "$Dest\requirements.txt" --disable-pip-version-check -q
 if ($LASTEXITCODE -ne 0) { Say "Package install failed - check your internet connection." Red; exit 1 }
+
+# ---- Write install-location config -----------------------------------------
+# Store chosen paths in a small JSON so the wizard/app can read them on first launch.
+$installMeta = @{
+    install_dir = $Dest
+    models_dir  = $ModelsDir
+} | ConvertTo-Json
+Set-Content -Path "$Dest\install_meta.json" -Value $installMeta -Encoding UTF8
 
 # ---- Uninstaller entry -----------------------------------------------------
 $uninst = @"

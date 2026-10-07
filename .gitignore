@@ -1,0 +1,33 @@
+# ── Build artefacts ────────────────────────────────────────────────────────────
+# PyInstaller output and work directories (CI rebuilds these on every release)
+build/venv/
+build/pyinstaller/
+dist/Johnny/
+dist/JohnnySetup.exe
+
+# Keep the .spec files and build scripts that live in build/
+!build/*.spec
+
+# ── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
+
+# ── Virtual environments ────────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+
+# ── IDE / OS ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+Thumbs.db
+desktop.ini
+.DS_Store
