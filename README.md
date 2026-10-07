@@ -4,12 +4,23 @@
 Johnny is a private, offline assistant that talks with you, controls your PC, and **learns tasks by watching you**.
 
 ## Install
-**Easiest:** run **`dist\JohnnySetup.exe`**. It's a normal Windows installer (no admin needed), and it upgrades older "Jarvis" installs while keeping your settings, memory and skills.
 
-**From source:**
-1. Double-click **`Install Johnny.bat`**.
+### ✨ Recommended: Download from GitHub Releases
+Every merge to `main` automatically builds and publishes a release at:
+
+**[Releases → latest](../../releases/latest)**
+
+| File | What it is |
+|---|---|
+| `JohnnySetup.exe` | Windows installer — no admin needed. Choose your install folder and Ollama models location. Upgrades older "Jarvis" installs automatically. |
+| `Johnny-x.y.z-portable-win64.zip` | Portable build — unzip anywhere and run `Johnny.exe`. |
+
+### From source
+1. Double-click **`Install Johnny.bat`** (or run `powershell -ExecutionPolicy Bypass -File installer\install.ps1`).
+   - Prompts you for an **install directory** (default: `%LOCALAPPDATA%\Programs\Johnny`).
+   - Prompts you for an **Ollama models directory** (default: Ollama's built-in location, usually `%USERPROFILE%\.ollama\models`). Choose a different drive if you want models stored elsewhere.
    - Installs Python 3.12 and Ollama with `winget` if they're missing.
-   - Copies Johnny to `%LOCALAPPDATA%\Programs\Johnny` with its own Python environment.
+   - Copies Johnny and creates its own Python environment.
    - Registers an uninstaller under *Settings › Apps*.
 2. The **Setup Wizard** opens:
    | Step | What you choose |
@@ -19,7 +30,7 @@ Johnny is a private, offline assistant that talks with you, controls your PC, an
    | Personality | Your name, the assistant's name (you'll wake it with "Hey <name>"), and a style: Butler / Friendly / Concise / Witty |
    | Voice | Speaking voice, speed, a voice test, offline voice input (faster-whisper) and hands-free "Hey Johnny" |
    | Learning & privacy | Habit learning, automation suggestions, privacy keywords, and permissions (ask / always / never) |
-   | Startup | Start with Windows, start minimized to the tray, desktop and Start-menu shortcuts |
+   | Startup | Start with Windows, start minimized to the tray, desktop and Start-menu shortcuts. **Also shows the Ollama models path** — change it at any time with Browse… |
    | Install | Downloads the model with a progress bar and installs any optional components |
 
 To change these later, open **Settings › Run full setup again**, or run `Johnny --setup`.
@@ -80,12 +91,41 @@ When a game is in the foreground, a small **HUD** appears in the top-right corne
 - PowerShell commands, closing apps, typing text and replaying skills ask for permission by default.
 - *Settings › Forget everything* wipes conversation history, remembered facts and activity history.
 
-## Building a standalone `JohnnySetup.exe`
-```bash
-powershell -ExecutionPolicy Bypass -File installer\build_exe.ps1
+## CI/CD — automatic releases
+
+Every **push to `main`** triggers the [release workflow](.github/workflows/release.yml):
+
+1. **Parses the commit title** for a semver version using Conventional Commits:
+   - `fix:` → patch bump  
+   - `feat:` → minor bump  
+   - `feat!:` / `BREAKING CHANGE` → major bump  
+   - Append `(v1.2.3)` anywhere to pin an exact version.
+2. **Builds** `Johnny.exe` with PyInstaller and `JohnnySetup.exe` with Inno Setup 6 on a fresh `windows-latest` runner.
+3. **Tags** the commit with the computed version (e.g. `v1.3.0`).
+4. **Publishes a GitHub Release** with `JohnnySetup.exe` and a portable ZIP attached.
+
+### PR title convention
+
+Pull-request titles must follow [Conventional Commits](https://www.conventionalcommits.org/) — the [PR title check workflow](.github/workflows/pr-title-check.yml) enforces this and posts a helpful comment if the title is invalid.
+
 ```
-This builds `dist\Johnny\Johnny.exe` with PyInstaller. If [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed, it also builds `dist\JohnnySetup.exe`: a normal Windows installer that offers to install Ollama.
- or ***just run Johnnysetup.exe under the dist folder in root***
+<type>(<optional scope>): <short description>
+```
+
+Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+
+## Building locally
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\build_exe.ps1
+# optionally pin a version:
+powershell -ExecutionPolicy Bypass -File installer\build_exe.ps1 -Version 1.2.3
+```
+
+Produces `dist\Johnny\Johnny.exe` (PyInstaller). If [Inno Setup 6](https://jrsoftware.org/isinfo.php) is installed, also produces `dist\JohnnySetup.exe`.
+
+> **Note:** `build/` and `dist/` are in `.gitignore` — pre-built binaries are no longer committed. Get them from the [GitHub Releases](../../releases) page instead.
+
 ## Development
 `Run Johnny (dev).bat` runs Johnny straight from this folder. Code layout:
 
