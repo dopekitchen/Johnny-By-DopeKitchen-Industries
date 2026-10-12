@@ -20,6 +20,6 @@ jobs:
           if [[ "$PR_TITLE" =~ $PATTERN ]]; then
             echo 'PR title is valid.'
           else
-            echo '::error::Use a Conventional Commit title: fix(scope): description, feat: description, or feat!: breaking change. Append (vX.Y.Z) to select a release version.'
+            echo '::error::Use a Conventional Commit title: fix(scope): description, feat: description, or feat!: breaking change.'
             exit 1
           fi
