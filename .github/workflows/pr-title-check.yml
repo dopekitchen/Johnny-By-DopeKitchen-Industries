@@ -1,0 +1,74 @@
+name: PR Title Check
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: write   # to post a comment if the title is invalid
+
+jobs:
+  check-pr-title:
+    name: Validate PR title (Conventional Commits)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check PR title format
+        id: check
+        shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR title: $PR_TITLE"
+
+          # Conventional Commits pattern
+          # Types: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+          # Optional scope: (scope)
+          # Optional breaking-change indicator: !
+          # Optional explicit semver: (vX.Y.Z) anywhere in the title
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .{1,100}$'
+
+          if echo "$PR_TITLE" | grep -qP "$PATTERN"; then
+            echo "✅ PR title is valid."
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ PR title does not follow the Conventional Commits format."
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Post guidance comment on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '## ❌ PR title check failed',
+              '',
+              'Your PR title must follow the **[Conventional Commits](https://www.conventionalcommits.org/)** format:',
+              '',
+              '```',
+              '<type>(<optional scope>): <short description>',
+              '```',
+              '',
+              '**Allowed types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`',
+              '',
+              '**Examples:**',
+              '- `feat: add models directory picker to installer`',
+              '- `fix(voice): prevent barge-in on headset`',
+              '- `chore: remove pre-built binaries from repo`',
+              '- `feat!: redesign setup wizard (v2.0.0)` ← triggers a major version bump',
+              '',
+              '**Tip:** Append `(vX.Y.Z)` anywhere in the title to pin an exact version for the release tag.',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

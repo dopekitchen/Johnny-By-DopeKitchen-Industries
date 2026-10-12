@@ -1,6 +1,9 @@
 ; Inno Setup script -> dist\JohnnySetup.exe  (build with installer\build_exe.ps1)
+; Version is injected at CI build time via /DAppVersion=x.y.z
+#ifndef AppVersion
+  #define AppVersion "0.0.0"
+#endif
 #define AppName "Johnny AI Butler"
-#define AppVersion "1.5.0"
 #define Publisher "DopeKitchen Industries"
 
 [Setup]
@@ -9,7 +12,9 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#Publisher}
 DefaultDirName={localappdata}\Programs\Johnny
-UsePreviousAppDir=no
+; Allow the user to change the destination folder in the wizard
+DisableDirPage=no
+UsePreviousAppDir=yes
 CloseApplications=force
 DefaultGroupName=Johnny
 PrivilegesRequired=lowest
@@ -25,7 +30,6 @@ WizardStyle=modern
 WizardImageFile=..\assets\wizard_large.bmp
 WizardSmallImageFile=..\assets\wizard_small.bmp
 DisableReadyPage=yes
-DisableDirPage=yes
 UninstallDisplayName={#AppName}
 DisableProgramGroupPage=yes
 
@@ -40,6 +44,46 @@ Name: "{autodesktop}\Johnny"; Filename: "{app}\Johnny.exe"; Tasks: desktopicon
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
 
 [Code]
+var
+  ModelsPage: TInputDirWizardPage;
+
+// Create an extra "Models location" page after the standard directory page.
+procedure InitializeWizard();
+begin
+  ModelsPage := CreateInputDirPage(wpSelectDir,
+    'Ollama models location',
+    'Where should Johnny store AI model files?',
+    'Models can be several gigabytes. Pick a drive with enough free space. '
+    + 'Leave blank to use the Ollama default location.',
+    True, '');
+  ModelsPage.Add('Models folder (leave blank for Ollama default):');
+  // Pre-fill with the user''s previous choice (stored in registry) if available.
+  ModelsPage.Values[0] := GetPreviousData('ModelsDir', '');
+end;
+
+// Persist the models-dir choice across upgrades.
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, 'ModelsDir', ModelsPage.Values[0]);
+end;
+
+// Write install_meta.json so the app knows where everything lives.
+procedure WriteInstallMeta();
+var
+  MetaFile: String;
+  ModelsDir: String;
+  Json: String;
+begin
+  MetaFile := ExpandConstant('{app}\install_meta.json');
+  ModelsDir := ModelsPage.Values[0];
+  // Basic JSON escaping for backslashes in Windows paths
+  StringChangeEx(ModelsDir, '\', '\\', True);
+  StringChangeEx(ExpandConstant('{app}'), '\', '\\', True);
+  Json := '{"install_dir": "' + StringReplace(ExpandConstant('{app}'), '\', '\\', [rfReplaceAll]) + '", '
+        + '"models_dir": "' + ModelsDir + '"}';
+  SaveStringToFile(MetaFile, Json, False);
+end;
+
 // Earlier releases were named "Jarvis". Remove that install first (user data in %APPDATA% is kept).
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
@@ -64,12 +108,16 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
 begin
-  if (CurStep = ssPostInstall) and (not OllamaInstalled()) then
+  if CurStep = ssPostInstall then
   begin
-    if MsgBox('Johnny needs Ollama (free) to run its local AI. Install it now with winget?',
-              mbConfirmation, MB_YESNO) = IDYES then
-      Exec('winget', 'install -e --id Ollama.Ollama --accept-package-agreements --accept-source-agreements',
-           '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
+    WriteInstallMeta();
+    if not OllamaInstalled() then
+    begin
+      if MsgBox('Johnny needs Ollama (free) to run its local AI. Install it now with winget?',
+                mbConfirmation, MB_YESNO) = IDYES then
+        Exec('winget', 'install -e --id Ollama.Ollama --accept-package-agreements --accept-source-agreements',
+             '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
+    end;
   end;
 end;
 

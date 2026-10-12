@@ -1,6 +1,7 @@
 """Persistent configuration stored in %APPDATA%\\Johnny."""
 import json
 import os
+import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -10,8 +11,33 @@ SKILLS_DIR = DATA_DIR / "skills"
 LOG_DIR = DATA_DIR / "logs"
 DB_PATH = DATA_DIR / "memory.db"
 
+
+def _install_meta() -> dict:
+    """Read install_meta.json written by the installer (both .ps1 and Inno Setup variants).
+    Returns an empty dict when running from source / install meta is absent."""
+    # When frozen by PyInstaller the exe lives in <install_dir>\\Johnny.exe
+    if getattr(sys, "frozen", False):
+        candidate = Path(sys.executable).parent / "install_meta.json"
+    else:
+        # Running from source: look one level up from the johnny/ package
+        candidate = Path(__file__).resolve().parent.parent / "install_meta.json"
+    if candidate.exists():
+        try:
+            return json.loads(candidate.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+# Apply OLLAMA_MODELS env-var early so Ollama uses the right model directory.
+_meta = _install_meta()
+_models_dir = _meta.get("models_dir", "")
+if _models_dir and not os.environ.get("OLLAMA_MODELS"):
+    os.environ["OLLAMA_MODELS"] = _models_dir
+
 DEFAULTS = {
     "setup_complete": False,
+    "models_dir": _models_dir,          # "" = let Ollama use its own default
     "user_name": "Sir",
     "assistant_name": "Johnny",
     "personality": "butler",          # butler | friendly | concise | witty

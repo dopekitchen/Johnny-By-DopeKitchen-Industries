@@ -1,10 +1,12 @@
 """First-run setup wizard: hardware check, Ollama, model choice + download, personality, voice, learning, startup."""
 import importlib.util
+import json
 import queue
 import threading
 import tkinter as tk
 import webbrowser
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 from . import APP_NAME, COMPANY, __version__, config, hardware, models_catalog, neural_voice, theme, voice, winintegration
 from .ollama_client import Ollama, OllamaError
@@ -54,6 +56,7 @@ class Wizard(tk.Tk):
         self.var_minimized = tk.BooleanVar(value=v["start_minimized"])
         self.var_desktop = tk.BooleanVar(value=not reconfigure)
         self.var_startmenu = tk.BooleanVar(value=not reconfigure)
+        self.var_models_dir = tk.StringVar(value=v.get("models_dir", ""))
 
         self._build_chrome()
         self.pages = [self.page_welcome, self.page_system, self.page_model, self.page_persona,
@@ -338,6 +341,12 @@ class Wizard(tk.Tk):
                 self._ui(messagebox.showinfo, "Voice", f"Voice test unavailable: {ex}")
         threading.Thread(target=run, daemon=True).start()
 
+    def _browse_models_dir(self):
+        chosen = filedialog.askdirectory(title="Select Ollama models folder",
+                                         initialdir=self.var_models_dir.get() or None)
+        if chosen:
+            self.var_models_dir.set(chosen)
+
     def page_learning(self):
         self.h("Learning & privacy", "Everything Johnny learns stays in your user folder on this PC.")
         c = self.card()
@@ -372,13 +381,28 @@ class Wizard(tk.Tk):
                         style="Panel.TCheckbutton").pack(anchor="w", pady=2)
         ttk.Checkbutton(c, text="Add to the Start menu", variable=self.var_startmenu,
                         style="Panel.TCheckbutton").pack(anchor="w", pady=2)
+
+        # ---- Ollama models directory ----------------------------------------
+        c3 = self.card()
+        ttk.Label(c3, text="Ollama models location", style="PanelH2.TLabel").pack(anchor="w", pady=(0, 4))
+        ttk.Label(c3, text="Models can be several gigabytes — point to a drive with plenty of space.\n"
+                          "Leave blank to use Ollama's default location.",
+                  style="PanelMuted.TLabel", wraplength=600).pack(anchor="w")
+        row_m = ttk.Frame(c3, style="Panel.TFrame")
+        row_m.pack(fill="x", pady=(6, 0))
+        self._models_entry = ttk.Entry(row_m, textvariable=self.var_models_dir, width=50)
+        self._models_entry.pack(side="left")
+        ttk.Button(row_m, text="Browse…", command=self._browse_models_dir).pack(side="left", padx=6)
+        ttk.Button(row_m, text="Clear (use default)",
+                   command=lambda: self.var_models_dir.set("")).pack(side="left")
         c2 = self.card()
         ttk.Label(c2, text="Summary", style="PanelH2.TLabel").pack(anchor="w")
         ttk.Label(c2, style="PanelMuted.TLabel", justify="left", text=(
             f"Model: {self.var_model.get()}\nAssistant: {self.var_name.get()} ({self.var_persona.get()}), calling you "
             f"\"{self.var_user.get()}\"\nVoice output: {'on' if self.var_tts.get() else 'off'}   "
             f"Voice input: {'on' if self.var_stt.get() else 'off'}\n"
-            f"Habit learning: {'on' if self.var_observe.get() else 'off'}")).pack(anchor="w", pady=4)
+            f"Habit learning: {'on' if self.var_observe.get() else 'off'}\n"
+            f"Models dir: {self.var_models_dir.get() or 'Ollama default'}")).pack(anchor="w", pady=4)
         self.btn_next.configure(text="Install")
 
     def page_install(self):
@@ -512,10 +536,11 @@ class Wizard(tk.Tk):
 
     def _save_config(self):
         c = self.cfg
+        models_dir = self.var_models_dir.get().strip()
         c.update(model=self.var_model.get().strip(), user_name=self.var_user.get().strip() or "Sir",
                  assistant_name=self.var_name.get().strip() or "Johnny", personality=self.var_persona.get(),
                  startup_with_windows=self.var_startup.get(), start_minimized=self.var_minimized.get(),
-                 setup_complete=True)
+                 models_dir=models_dir, setup_complete=True)
         kind, vid = self._voice_map.get(self.var_voice.get(), ("neural", "af_heart"))
         c["voice"].update(tts_enabled=self.var_tts.get(), engine=kind,
                           tts_voice_id=vid if kind == "windows" else c["voice"]["tts_voice_id"],
@@ -530,6 +555,17 @@ class Wizard(tk.Tk):
         c["permissions"].update(run_shell=self.var_shell.get(), control_input=self.var_input.get(),
                                 file_access=self.var_files.get())
         config.save(c)
+        # Also update install_meta.json so the env-var is applied on the next launch.
+        if getattr(__import__("sys"), "frozen", False):
+            meta_path = Path(__import__("sys").executable).parent / "install_meta.json"
+        else:
+            meta_path = Path(__file__).resolve().parent.parent / "install_meta.json"
+        try:
+            existing = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+            existing["models_dir"] = models_dir
+            meta_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        except OSError:
+            pass  # non-fatal — the env-var was already set for this session
 
     def page_done(self):
         self.h(f"{self.var_name.get()} is ready", "Here's how to get going:")

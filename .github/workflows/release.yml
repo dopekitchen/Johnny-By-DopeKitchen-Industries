@@ -1,0 +1,135 @@
+name: Release on Merge to Main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write   # needed to create tags and releases
+
+jobs:
+  release:
+    name: Tag, Build & Release
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # full history so we can read all tags
+
+      # ── 2. Parse semver from commit title ────────────────────────────────────
+      # The commit title (first line of the merge/commit message) must contain
+      # a semantic version token in the form:  feat: my change (v1.2.3)
+      # OR the title starts with a conventional-commits keyword that maps to a
+      # version bump, in which case we auto-increment from the latest tag.
+      - name: Derive version from commit title
+        id: semver
+        shell: pwsh
+        run: |
+          $title = "${{ github.event.head_commit.message }}" -split "`n" | Select-Object -First 1
+          Write-Host "Commit title: $title"
+
+          # 1) Explicit version in title: "… (v1.2.3)" or "… v1.2.3"
+          if ($title -match '(?:^|[\s(])v?(\d+\.\d+\.\d+)[\s)$]') {
+            $version = $Matches[1]
+            Write-Host "Explicit version found: $version"
+          } else {
+            # 2) Auto-increment from latest semver tag
+            $latest = git tag --list 'v*.*.*' --sort=-v:refname | Select-Object -First 1
+            if (-not $latest) { $latest = "v0.0.0" }
+            $parts = $latest.TrimStart('v') -split '\.'
+            $major = [int]$parts[0]; $minor = [int]$parts[1]; $patch = [int]$parts[2]
+
+            if ($title -match '^(feat|feature)(\(.+\))?!:|^BREAKING') {
+              $major++; $minor = 0; $patch = 0
+            } elseif ($title -match '^feat(\(.+\))?:') {
+              $minor++; $patch = 0
+            } else {
+              $patch++
+            }
+            $version = "$major.$minor.$patch"
+            Write-Host "Auto-incremented from $latest to $version"
+          }
+
+          # Guard: do not re-release an already-tagged version
+          $existing = git tag --list "v$version"
+          if ($existing) {
+            Write-Host "Tag v$version already exists — skipping release."
+            echo "skip=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "skip=false" >> $env:GITHUB_OUTPUT
+          }
+
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "tag=v$version"    >> $env:GITHUB_OUTPUT
+
+      # ── 3. Install Python 3.12 ───────────────────────────────────────────────
+      - name: Set up Python 3.12
+        if: steps.semver.outputs.skip == 'false'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ── 4. Install Inno Setup 6 ──────────────────────────────────────────────
+      - name: Install Inno Setup 6
+        if: steps.semver.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          $url = "https://files.jrsoftware.org/is/6/innosetup-6.4.3.exe"
+          $dest = "$env:TEMP\innosetup.exe"
+          Invoke-WebRequest -Uri $url -OutFile $dest
+          Start-Process $dest -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -Wait
+
+      # ── 5. Build the app ─────────────────────────────────────────────────────
+      - name: Build Johnny.exe and JohnnySetup.exe
+        if: steps.semver.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File installer\build_exe.ps1 `
+            -Version "${{ steps.semver.outputs.version }}"
+
+      # ── 6. Package the portable ZIP ──────────────────────────────────────────
+      - name: Package portable ZIP
+        if: steps.semver.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.semver.outputs.version }}"
+          Compress-Archive -Path "dist\Johnny\*" -DestinationPath "dist\Johnny-$ver-portable-win64.zip"
+
+      # ── 7. Create Git tag ────────────────────────────────────────────────────
+      - name: Create Git tag
+        if: steps.semver.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.semver.outputs.tag }}" -m "Release ${{ steps.semver.outputs.tag }}"
+          git push origin "${{ steps.semver.outputs.tag }}"
+
+      # ── 8. Cut the GitHub Release ─────────────────────────────────────────────
+      - name: Create GitHub Release
+        if: steps.semver.outputs.skip == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.semver.outputs.tag }}
+          name: "Johnny ${{ steps.semver.outputs.tag }}"
+          body: |
+            ## Johnny ${{ steps.semver.outputs.tag }}
+
+            Built automatically from commit [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+
+            ### Install
+            | File | What it is |
+            |---|---|
+            | `JohnnySetup.exe` | **Recommended** – Windows installer, no admin needed. Lets you choose the install folder and Ollama models location. |
+            | `Johnny-${{ steps.semver.outputs.version }}-portable-win64.zip` | Portable build – unzip anywhere and run `Johnny.exe`. |
+
+            > **Requires [Ollama](https://ollama.com) to be installed.** The GUI installer can install it for you.
+          draft: false
+          prerelease: false
+          files: |
+            dist/JohnnySetup.exe
+            dist/Johnny-${{ steps.semver.outputs.version }}-portable-win64.zip
