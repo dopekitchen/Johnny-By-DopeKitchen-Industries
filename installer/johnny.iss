@@ -72,14 +72,18 @@ procedure WriteInstallMeta();
 var
   MetaFile: String;
   ModelsDir: String;
+  InstallDir: String;
   Json: String;
 begin
   MetaFile := ExpandConstant('{app}\install_meta.json');
   ModelsDir := ModelsPage.Values[0];
+  InstallDir := ExpandConstant('{app}');
   // Basic JSON escaping for backslashes in Windows paths
   StringChangeEx(ModelsDir, '\', '\\', True);
-  StringChangeEx(ExpandConstant('{app}'), '\', '\\', True);
-  Json := '{"install_dir": "' + StringReplace(ExpandConstant('{app}'), '\', '\\', [rfReplaceAll]) + '", '
+  StringChangeEx(InstallDir, '\', '\\', True);
+  StringChangeEx(ModelsDir, '"', '\"', True);
+  StringChangeEx(InstallDir, '"', '\"', True);
+  Json := '{"install_dir": "' + InstallDir + '", '
         + '"models_dir": "' + ModelsDir + '"}';
   SaveStringToFile(MetaFile, Json, False);
 end;

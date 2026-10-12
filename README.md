@@ -95,18 +95,21 @@ When a game is in the foreground, a small **HUD** appears in the top-right corne
 
 Every **push to `main`** triggers the [release workflow](.github/workflows/release.yml):
 
-1. **Parses the commit title** for a semver version using Conventional Commits:
+1. **Reads commits since the last stable version tag**, including PR titles in merge messages, using Conventional Commits:
    - `fix:` → patch bump  
    - `feat:` → minor bump  
-   - `feat!:` / `BREAKING CHANGE` → major bump  
-   - Append `(v1.2.3)` anywhere to pin an exact version.
-2. **Builds** `Johnny.exe` with PyInstaller and `JohnnySetup.exe` with Inno Setup 6 on a fresh `windows-latest` runner.
-3. **Tags** the commit with the computed version (e.g. `v1.3.0`).
-4. **Publishes a GitHub Release** with `JohnnySetup.exe` and a portable ZIP attached.
+   - Any type with `!:` / `BREAKING CHANGE:` → major bump
+   - Append `(v1.2.3)` to the latest commit or merged PR title to pin a version greater than the previous release.
+   - The first ordinary release is `v0.1.0`; a breaking change starts at `v1.0.0`.
+2. **Builds** `Johnny.exe` with PyInstaller and `JohnnySetup.exe` with the runner's Inno Setup 6 compiler on a fresh `windows-2025` runner. If the compiler is absent, Chocolatey installs it.
+3. **Checks** both outputs and smoke-tests imports in the frozen executable, then uploads the installer and portable ZIP as workflow artifacts.
+4. **Publishes a GitHub Release** through a draft after the build succeeds. Re-running an unfinished release repairs the same tag; an already published release is left intact. Main-branch runs are serialized to avoid version races.
+
+Pull requests run the same Windows build and packaging checks with read-only repository permissions, without publishing releases. The workflow can also be run manually on `main` to retry a release.
 
 ### PR title convention
 
-Pull-request titles must follow [Conventional Commits](https://www.conventionalcommits.org/) — the [PR title check workflow](.github/workflows/pr-title-check.yml) enforces this and posts a helpful comment if the title is invalid.
+Pull-request titles must follow [Conventional Commits](https://www.conventionalcommits.org/) — the [PR title check workflow](.github/workflows/pr-title-check.yml) enforces this and reports guidance in its check log. It needs no write permissions and also works on fork PRs.
 
 ```
 <type>(<optional scope>): <short description>
