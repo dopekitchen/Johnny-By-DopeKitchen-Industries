@@ -18,8 +18,11 @@ jobs:
     name: Build and verify Windows packages
     runs-on: windows-2025
     timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       - name: Test release version rules
@@ -29,7 +32,7 @@ jobs:
         id: version
         shell: pwsh
         run: ./.github/scripts/release-version.ps1
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
           cache: pip
@@ -64,38 +67,60 @@ jobs:
             $process.Kill()
             throw 'Frozen application smoke test timed out'
           }
-          if ($process.ExitCode -ne 0) { throw 'Frozen application imports failed' }
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path build-smoke-test.log) { Get-Content build-smoke-test.log }
+            throw 'Frozen application imports failed'
+          }
           Compress-Archive -Path 'dist/Johnny/*' -DestinationPath "dist/Johnny-$env:APP_VERSION-portable-win64.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: johnny-windows-${{ steps.version.outputs.version }}
           if-no-files-found: error
           path: |
             dist/JohnnySetup.exe
             dist/Johnny-*-portable-win64.zip
+  verify-artifacts:
+    name: Verify uploaded release artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: johnny-windows-${{ needs.build.outputs.version }}
+          path: dist
+      - name: Check downloaded installer and portable ZIP contents
+        env:
+          APP_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          assert Path('dist/JohnnySetup.exe').stat().st_size > 0, 'Empty installer'
+          with ZipFile(f'dist/Johnny-{os.environ["APP_VERSION"]}-portable-win64.zip') as archive:
+              assert 'Johnny.exe' in archive.namelist(), 'Portable executable missing'
+              assert archive.testzip() is None, 'Corrupt portable ZIP'
+          PY
   release:
     name: Publish verified packages
-    needs: build
+    needs: [build, verify-artifacts]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-      - name: Derive release version
-        id: version
-        shell: pwsh
-        run: ./.github/scripts/release-version.ps1
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
-          name: johnny-windows-${{ steps.version.outputs.version }}
+          name: johnny-windows-${{ needs.build.outputs.version }}
           path: dist
       - name: Publish release through a recoverable draft
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
+          TAG: ${{ needs.build.outputs.tag }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" --json isDraft --jq '.isDraft' > is-draft.txt; then
