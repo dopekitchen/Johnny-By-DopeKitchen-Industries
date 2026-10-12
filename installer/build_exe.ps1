@@ -3,7 +3,8 @@
 # Accepts an optional -Version flag (e.g. "1.2.3") injected by the CI release workflow.
 # Uses a clean build venv so unrelated packages in your global Python (torch, etc.) are never bundled.
 param(
-    [string]$Version = ""
+    [string]$Version = "",
+    [switch]$RequireInstaller
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,17 +14,19 @@ Set-Location $Root
 $venv = Join-Path $Root "build\venv"
 if (-not (Test-Path "$venv\Scripts\python.exe")) {
     Write-Host "Creating clean build environment..." -ForegroundColor Cyan
-    py -3.12 -m venv $venv
-    if ($LASTEXITCODE -ne 0) { python -m venv $venv }
+    python -m venv $venv
+    if ($LASTEXITCODE -ne 0) { throw "Creating build environment failed" }
 }
 $py = "$venv\Scripts\python.exe"
 & $py -m pip install -q --disable-pip-version-check pyinstaller -r requirements.txt faster-whisper sounddevice numpy kokoro-onnx
 if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 & $py installer\make_assets.py
+if ($LASTEXITCODE -ne 0) { throw "Asset generation failed" }
 
 & $py -m PyInstaller --noconfirm --clean --windowed --name Johnny `
     --distpath dist --workpath build\pyinstaller --specpath build `
     --icon "$Root\assets\johnny.ico" `
+    --paths "$Root" `
     --add-data "$Root\assets;assets" `
     --collect-all pyttsx3 --collect-submodules comtypes --hidden-import win32com.client --hidden-import pythoncom `
     --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32 `
@@ -37,8 +40,8 @@ if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 Write-Host "Built dist\Johnny\Johnny.exe" -ForegroundColor Green
 
-$iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
-          "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+$iscc = @($env:ISCC_PATH, "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+          "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 if ($iscc) {
     if ($Version -ne "") {
         & $iscc /Q /DAppVersion=$Version installer\johnny.iss
@@ -48,5 +51,6 @@ if ($iscc) {
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
     Write-Host "Built dist\JohnnySetup.exe" -ForegroundColor Green
 } else {
+    if ($RequireInstaller) { throw "Inno Setup is required for this build" }
     Write-Host "Inno Setup not found - install it (winget install JRSoftware.InnoSetup) to produce JohnnySetup.exe." -ForegroundColor Yellow
 }
