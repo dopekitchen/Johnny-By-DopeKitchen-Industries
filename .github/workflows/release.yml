@@ -20,18 +20,18 @@ jobs:
     timeout-minutes: 45
     outputs:
       version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      tag: ${{ steps.version.outputs.version_tag }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-      - name: Test release version rules
-        shell: pwsh
-        run: ./.github/scripts/test-release-version.ps1
-      - name: Derive release version
+      - name: Calculate version from Git history
         id: version
-        shell: pwsh
-        run: ./.github/scripts/release-version.ps1
+        uses: paulhatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
+        with:
+          tag_prefix: v
+          search_commit_body: true
+          enable_prerelease_mode: false
       - uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'

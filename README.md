@@ -95,12 +95,12 @@ When a game is in the foreground, a small **HUD** appears in the top-right corne
 
 Every **push to `main`** triggers the [release workflow](.github/workflows/release.yml):
 
-1. **Reads commits since the last stable version tag**, including PR titles in merge messages, using Conventional Commits:
+1. **Calculates the next version with [PaulHatch/semantic-version](https://github.com/PaulHatch/semantic-version)**, pinned to v6.0.2. It reads commits since the last version tag, including merge-message bodies:
    - `fix:` → patch bump  
    - `feat:` → minor bump  
    - Any type with `!:` / `BREAKING CHANGE:` → major bump
-   - Append `(v1.2.3)` to the latest commit or merged PR title to pin a version greater than the previous release.
-   - The first ordinary release is `v0.1.0`; a breaking change starts at `v1.0.0`.
+   - Other commits → patch bump.
+   - Version numbers come from tags and commit types; `(vX.Y.Z)` text does not override them.
 2. **Builds** `Johnny.exe` with PyInstaller and `JohnnySetup.exe` with the runner's Inno Setup 6 compiler on a fresh `windows-2025` runner. If the compiler is absent, Chocolatey installs it.
 3. **Checks** both outputs and smoke-tests imports in the frozen executable, then uploads the installer and portable ZIP as workflow artifacts.
 4. **Publishes a GitHub Release** through a draft after the build succeeds. Re-running an unfinished release repairs the same tag; an already published release is left intact. Main-branch runs are serialized to avoid version races.
